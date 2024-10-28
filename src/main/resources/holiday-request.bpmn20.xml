@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://www.flowable.org/processdef">
+<!--
+    1. 启动事件(start event)。这是一个流程实例的起点。
+    2. 用户任务(user task)。这是流程中人类用户操作的步骤。在这个例子中，经理需要批准或驳回申请。
+    3. 排他网关(exclusive gateway) (带叉的菱形)会将流程实例路由至批准或驳回路径。
+-->
+
+<!--
+    1. 每一个步骤（在BPMN 2.0术语中称作活动(activity)）都有一个id属性，
+    为其提供一个在XML文件中唯一的标识符。所有的活动都可以设置一个名字，以提高流程图的可读性。
+
+    2. 活动之间通过顺序流(sequence flow)连接，在流程图中是一个有向箭头。
+    在执行流程实例时，执行(execution)会从启动事件沿着顺序流流向下一个活动。
+
+    3. 排他网关: 当流程实例的执行到达这个网关时，会计算条件，并使用第一个计算为true的顺序流。
+    这就是排他的含义：只选择一个。当然如果需要不同的路由策略，可以使用其他类型的网关。
+
+    4. 用作条件的表达式为${approved}，这是${approved == true}的简写。变量’approved’被称作流程变量(process variable)。
+    流程变量是持久化的数据，与流程实例存储在一起，并可以在流程实例的生命周期中使用。
+  -->
+    <process id="holidayRequest" name="Holiday Request" isExecutable="true">
+
+        <startEvent id="startEvent"/>
+        <sequenceFlow sourceRef="startEvent" targetRef="approveTask"/>
+        <!--    用户任务配置办理人。第一个任务指派给"经理(managers)"组    -->
+        <userTask id="approveTask" name="Approve or reject request" flowable:candidateGroups="managers"/>
+        <sequenceFlow sourceRef="approveTask" targetRef="decision"/>
+
+        <exclusiveGateway id="decision"/>
+        <sequenceFlow sourceRef="decision" targetRef="externalSystemCall">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[
+                  ${approved}
+                ]]>
+            </conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow  sourceRef="decision" targetRef="sendRejectionMail">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[
+                  ${!approved}
+                ]]>
+            </conditionExpression>
+        </sequenceFlow>
+        <!-- 这是一个服务任务(service task), CallExternalSystemDelegate类需要实现JavaDelegate接口   -->
+        <serviceTask id="externalSystemCall" name="Enter holidays in external system"
+                     flowable:class="cn.glong.flowable.CallExternalSystemDelegate"/>
+        <sequenceFlow sourceRef="externalSystemCall" targetRef="holidayApprovedTask"/>
+        <!--
+            第二个任务添加assignee属性。
+            请注意我们没有像上面的’managers’一样使用静态值，而是使用一个流程变量动态指派。
+            这个流程变量是在流程实例启动时传递的：
+        -->
+        <userTask id="holidayApprovedTask" name="Holiday approved" flowable:assignee="${employee}"/>
+        <sequenceFlow sourceRef="holidayApprovedTask" targetRef="approveEnd"/>
+
+        <serviceTask id="sendRejectionMail" name="Send out rejection email"
+                     flowable:class="org.flowable.SendRejectionMail"/>
+        <sequenceFlow sourceRef="sendRejectionMail" targetRef="rejectEnd"/>
+
+        <endEvent id="approveEnd"/>
+
+        <endEvent id="rejectEnd"/>
+
+    </process>
+
+</definitions>
